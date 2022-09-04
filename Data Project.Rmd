@@ -8,6 +8,7 @@ output: html_document
 library(dplyr)
 library(readxl)
 library(ggplot2)
+library(ggrepel)
 library(tidyverse)
 library(tidyselect)
 library(DT)
@@ -26,75 +27,92 @@ lsoadat <- st_read('lsoadat.shp') %>% select(name) # LSOA boundaries
 lsoa_all_dat <- st_read('england_lsoa_2011_clipped.shp')
 poddat <- read_xlsx('april2021cwh.xlsx')[-c(18:19),] #pod data drop nas
 dat1 <- data.frame(read_excel("CCH-full-data.xlsx", 1))
-st_drivers()
 
 ```
 
 ```{r tables}
+
+# merge data
 alldat1 <- left_join(d1,imdbanes,by='lsoa11cd')
 alldat <- left_join(alldat1,poddat,by="pathway_uuid") %>% drop_na(pathway_name)
-
+# relabel Curo to Housing in data
 for (i in 1:nrow(alldat)){
   if (alldat$pathway_name[i]=="Curo"){
     alldat$pathway_name[i]='Housing'
   }
 }
+alldat
 
 ```
 
 ```{r tables, echo=FALSE}
+
 # visits per organization
 table_org <- d1 %>% group_by(organisation_name) %>% filter(!is.na(organisation_name)) %>% summarise(n=n()) %>% arrange(desc(n))
 datatable(table_org, rownames = FALSE, colnames=c("Organisation", "Number of visits"))
+
+```
+
+```{r tables}
 
 # organisation - average age
 org_age <- alldat %>% mutate(age = 2021-year_of_birth) %>% group_by(organisation_name) %>% summarise(Mean_Age=round(mean(age)))
 datatable(org_age, rownames = FALSE, colnames=c("Organisation", "Mean Age"))
 
+```
+
+```{r tables}
+
 # organisation - number of visits
 opv <-  alldat  %>% mutate(age = 2021-year_of_birth) %>% group_by(organisation_name) %>% filter(age>0, !is.na(organisation_name)) %>% summarise(n=n())
-table_age_new <- full_join(table_age2,table_age,by='age')
 datatable(opv, rownames = FALSE, colnames=c("Organisation", 'Number of Visits'))
 
-# users by age
-table_age2 <- dat1 %>% mutate(age = 2021-year_of_birth) %>% group_by(age) %>% filter(age>0) %>% summarise(n=n())
-table_age_new <- full_join(table_age2,table_age,by='age')
-datatable(table_age_new, rownames = FALSE, colnames=c("Age", "Number of patients", "Number of visits"))
+```
+
+```{r tables}
 
 # lsoa - IMD
 lsoa_imd <- imdbanes %>% select(lsoa11nm, imdr, imdd)
 datatable(lsoa_imd, rownames = FALSE, colnames=c("LSOA", "IMDR", "IMDD"))
 
+```
+
+```{r tables}
+
 #lsoa - age
 lsoa_age <- alldat %>% mutate(age = 2021-year_of_birth) %>% group_by(lsoa11nm) %>% filter(age>0) %>%  summarise(Mean_Age =round(mean(age))) 
 show(datatable(lsoa_age, rownames = FALSE, colnames=c("LSOA", "Mean Age")))
+
+````
+
+```{r tables}
 
 # visits per pod
 table_pod <- alldat %>% group_by(pathway_name) %>% summarise(n=n()) %>% arrange(desc(n)) %>% drop_na()
 datatable(table_pod, rownames = FALSE, colnames=c("Pod", "Number of visits"))
 
+```
+
+```{r tables}
 
 # pod - average age
 pod_age <- alldat %>% mutate(age = 2021-year_of_birth) %>% group_by(pathway_name) %>% summarise(Mean_Age=round(mean(age))) %>% drop_na()
 datatable(pod_age, rownames = FALSE, colnames=c("Pod", "Mean Age"))
 
+```
+
+```{r tables}
 # pod - number of visits
 table_pod <-  alldat  %>% mutate(age = 2021-year_of_birth) %>% group_by(pathway_name) %>% filter(age>0, !is.na(pathway_name)) %>% summarise(n=n())
 datatable(table_pod, rownames = FALSE, colnames=c("Pod", 'Number of Visits'))
 
-
 ```
 
 ```{r}
+
 n1 <- table_pod %>%mutate(prop = round(100*n/sum(n))) %>% mutate(ypos = cumsum(prop)- 0.5*prop) %>% filter()
 
-for (i in 1:nrow(n1)){
-  if (n1$prop[i]>=4){
-    n1$Name[i] = n1$pathway_name[i]
-  }
-    else {n1$Name[i] = 'Other'}
-
-}
+n1$Name = ifelse(n1$prop>=4, as.character(n1$pathway_name), 'Other')
 
 n2 <- n1 %>% group_by(Name) %>% summarise(yy=sum(prop))
 
@@ -104,143 +122,212 @@ df2 <- n3 %>%
   mutate(csum = rev(cumsum(rev(prop))), 
          pos = prop/2 + lead(csum, 1),
          pos = if_else(is.na(pos), prop/2, pos))
+datatable(df2)
+
 ```
 
 
 ```{r plots, echo=FALSE}
+
 # number of visits per organisation
-table_org  %>% ggplot(mapping = aes(x = organisation_name, y = n)) + geom_col(fill = "#56B4E9") + theme_classic() + xlab('Organisation') + ylab("Number of visits") + coord_flip()
+table_org  %>% ggplot(mapping = aes(x = organisation_name, y = n)) +
+  geom_col(fill = "#56B4E9") +
+  theme_classic() +
+  xlab('Organisation') +
+  ylab("Number of visits") +
+  coord_flip()
+
+```
+
+```{r tables}
 
 # number of visits per pod
-table_pod %>% drop_na() %>% ggplot(mapping = aes(x = pathway_name, y = n)) + geom_col(fill = "#56B4E9") + theme_classic() + xlab('Pod') + ylab("Number of visits") + coord_flip() 
+table_pod %>% drop_na() %>% ggplot(mapping = aes(x = pathway_name, y = n)) +
+  geom_col(fill = "#56B4E9") +
+  theme_classic() +
+  xlab('Pod') +
+  ylab("Number of visits") +
+  coord_flip()
+
 ```
 
 ```{r}
- Pods <- c("Enhanced triage","Food","General wellbeing (inc. weight management)","Help from a community volunteer", "Housing", "Logistics and transport","Mental wellbeing", "Money matters and work", 'Other') 
  
- Pods <- alldat$pathway_name
+
+Pods <- alldat$pathway_name
  
- Other <- c( "AGE UK (Discharge support and admissions avoidance)", "Social prescribing","Curo", "Stop Smoking", "Employment and Skills","CCC - Health access","Clean Slate","The Carers Centre")
+Other <- c( "AGE UK (Discharge support and admissions avoidance)", "Social prescribing","Curo", "Stop Smoking", "Employment and Skills","CCC - Health access","Clean Slate","The Carers Centre")
 
 
 alldat$pathway_name <- factor(alldat$pathway_name, levels = rev(c("Help from a community volunteer","Logistics and transport", "Mental wellbeing", "Food", "Money matters and work", "Enhanced triage", "Housing", "General wellbeing (inc. weight management)", "AGE UK (Discharge support and admissions avoidance)", "Social prescribing","Curo", "Stop Smoking", "Employment and Skills","CCC - Health access","Clean Slate","The Carers Centre" )))
 
-colpal1 <- rev(c('#f7fbff',
+colpal <- rev(c('#f7fbff',
 '#deebf7','#c6dbef','#9ecae1','#6baed6','#4292c6','#2171b5','#08519c','#08306b','#010f2e'))
 
+```
 
+```{r}
 
 # with 9YOs
-alldat %>% mutate(Age = 2021-year_of_birth) %>% filter(Age>0) %>% drop_na(pathway_name) %>%  ggplot(aes(Age, fill=pathway_name)) + geom_histogram(binwidth=5, color='white') +theme_classic() + scale_x_continuous(breaks=c(0,seq(10,120,10)), limits = c(0,110)) + scale_y_continuous(breaks=c(0,seq(200,1400,200)), limits = c(0,1200))+ scale_fill_manual(values = rev(cols))
+alldat %>% mutate(Age = 2021-year_of_birth) %>% filter(Age>0) %>% drop_na(pathway_name) %>%  ggplot(aes(Age, fill=pathway_name)) +
+  geom_histogram(binwidth=5, color='white') +
+  theme_classic() + scale_x_continuous(breaks=c(0,seq(10,120,10)), limits = c(0,110)) +
+  scale_y_continuous(breaks=c(0,seq(200,1400,200)), limits = c(0,1200))
 
+```
 
+```{r}
  Pods <- c("Enhanced triage","Food","General wellbeing (inc. weight management)","Help from a community volunteer", "Housing", "Logistics and transport","Mental wellbeing", "Money matters and work", 'Other')                                                    
 
 
 Other <- c( "AGE UK (Discharge support and admissions avoidance)", "Social prescribing","Curo", "Stop Smoking", "Employment and Skills","CCC - Health access","Clean Slate","The Carers Centre")
 
 
-alldat$Pods <- alldat$pathway_name
-alldat$Pods <- factor(alldat$Pods, levels = Pods)
+alldat$Pods <- factor(alldat$pathway_name,levels = Pods)
 
+```
 
+```{r}
 for (i in 1:nrow(alldat)){
   if (any(alldat$pathway_name[i]%in%Other)){
     alldat$Pods[i]='Other'
   }
 }
 
-
-
-b1 <- alldat %>% mutate(Age = 2021-year_of_birth) %>% filter(Age>0, Age!=9) %>% drop_na(Pods) %>%  ggplot(aes(Age, fill=Pods)) + geom_histogram(binwidth=5, color='white') +theme_classic() + scale_x_continuous(breaks=c(0,seq(10,120,10)), limits = c(0,110)) + scale_y_continuous(breaks=c(0,seq(200,1400,200)), limits = c(0,1200))+ scale_fill_manual(values = rev(cols))+ scale_fill_brewer(palette = 'Set3') + ylab("Number of users")#+ theme(title  ='pod') # + scale_fill_manual() 
-
-b2 <- alldat %>% mutate(Age = 2021-year_of_birth) %>% filter(Age>0) %>% drop_na(Pods) %>%  ggplot(aes(Age, fill=Pods)) + geom_histogram(binwidth=5, color='white') +theme_classic() + scale_x_continuous(breaks=c(0,seq(10,120,10)), limits = c(0,110)) + scale_y_continuous(breaks=c(0,seq(200,1400,200)), limits = c(0,1200))+ scale_fill_manual(values = rev(cols))+ scale_fill_brewer(palette = 'Set3') + ylab("Number of users") #+ theme(title  ='pod') # + scale_fill_manual() 
-
+b1 <- alldat %>% mutate(Age = 2021-year_of_birth) %>% filter(Age>0, Age!=9) %>% drop_na(Pods) %>%  ggplot(aes(Age, fill=Pods)) +
+  geom_histogram(binwidth=5, color='white') +
+  theme_classic() +
+  ylab("Number of users") +
+  scale_x_continuous(breaks=c(0,seq(10,120,10)), limits = c(0,110)) +
+  scale_y_continuous(breaks=c(0,seq(200,1400,200)), limits = c(0,1200))+ 
+  scale_fill_brewer(palette = 'Set3')
 b1
-b2
+
 ```
 
+```{r}
+
+b2 <- alldat %>% mutate(Age = 2021-year_of_birth) %>% filter(Age>0) %>% drop_na(Pods) %>%  ggplot(aes(Age, fill=Pods)) + geom_histogram(binwidth=5, color='white') +
+  theme_classic() + scale_x_continuous(breaks=c(0,seq(10,120,10)), limits = c(0,110)) +
+  scale_y_continuous(breaks=c(0,seq(200,1400,200)), limits = c(0,1200)) +
+  ylab("Number of users")+
+  scale_fill_brewer(palette = 'Set3')
+b2
+
+```
 
 ```{r}
 
 pie <- ggplot(n3, aes(x = "", y = prop, fill = factor(Name))) +
-  geom_col(width = 1, position = 'stack', color="black")
-
-pie1 <- pie  +theme_void()+
+  geom_col(width = 1, position = 'stack', color="black") +
+  theme_void() +
   geom_label_repel(data = df2,
                    aes(y = pos, label = paste0(prop, "%")),
-                   size = 4.5, nudge_x = 1, show.legend = FALSE)+
-  guides(fill=guide_legend(title="Pod")) + theme(plot.title = element_text(hjust = 0.5)) + scale_fill_brewer(palette = 'Set3')+ coord_polar("y")
+                   size = 4.5, nudge_x = 1, show.legend = FALSE) +
+  guides(fill=guide_legend(title="Pod")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_brewer(palette = 'Set3') +
+  coord_polar("y")
 
-
-
+pie
 
 ```
+
 
 ```{r map data, include=FALSE}
+
 lsoa_sf <- st_as_sf(lsoacoord, coords = c("LONG_", "LAT"))
+
 st_crs(lsoa_sf) <- 4326
-ukd <- ukdat[[2]][-c(11,12)]
-```
-
-```{r maps, echo=FALSE}
-
-# England/wales plot with lsoas
-ggplot() + geom_sf(data = ukd, fill = "grey", color = "#F6F6F6") + geom_sf(data = lsoa_sf, shape = 1) + coord_sf(crs = "+proj=merc") + theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks = element_blank(),
-        rect = element_blank()) + ggtitle("LSOA with hub usage")
-
-```
-```{r maps, echo=FALSE}
 
 # England/wales plot with lsoas
 banes <- grep("Bath", imdbanes$lsoa11nm, value=TRUE)
+
 baneslsoa <- imdbanes[imdbanes$lsoa11nm%in%banes,'lsoa11cd']
+
 lsoa_sf1 <- lsoa_sf[lsoa_sf$LSOA11CD%in%baneslsoa,]
 
-ggplot() + geom_sf(data = ukd, fill = "grey", color = "#F6F6F6") + geom_sf(data = lsoa_sf1, shape = 1) + coord_sf(crs = "+proj=merc") + theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks = element_blank(),
-        rect = element_blank()) + ggtitle("LSOA with hub usage")
-
-ggplot() + geom_sf(data = ukd, fill = "grey", color = "#F6F6F6") + geom_sf(data = lsoa_sf, shape = 1) + coord_sf(crs = "+proj=merc") + theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks = element_blank(),
-        rect = element_blank()) + ggtitle("LSOA with hub usage")
-
 ```
-```{r}
-banes1 <- grep("Bath", lsoa_all_dat$name, value=TRUE)
-baneslsoa <- lsoa_all_dat[lsoa_all_dat$name%in%banes1, 'code']
-ggplot() + geom_sf(data = baneslsoa, fill = "grey", color = "#F6F6F6")
 
+
+```{r}
 # visits per organization
 visits <- d1 %>% group_by(lsoa11cd) %>% filter(!is.na(lsoa11cd)) %>% summarise(n=n()) 
 
 patients <- dat1 %>% group_by(lsoa11cd) %>% filter(!is.na(lsoa11cd)) %>% summarise(n=n())
 
-fd <- full_join(visits,patients, by='lsoa11cd')
-fd1 <- full_join(fd,imdbanes, by='lsoa11cd') %>% select(-lsoa11nm,-imdr) %>% rename(Visits = n.x, NPatients = n.y, IMD = imdd)
-fd2 <- left_join(baneslsoa,fd1,by=c('code'='lsoa11cd'))
+fd <- full_join(visits, patients, by='lsoa11cd')
 
-fd3 <- left_join(fd2,imdbanes,by=c('code'='lsoa11cd'))
+fd1 <- full_join(fd,imdbanes, by='lsoa11cd') %>% select(-lsoa11nm,-imdr) %>%
+rename(Visits = n.x, NPatients = n.y, IMD = imdd)
 
-tmp <- left_join(fd3,alldat,by=c('code'='lsoa11cd')) %>% select("organisation_name","NPatients","Visits")
+fd2 <- left_join(data.frame(lsoa11cd = baneslsoa),fd1,by='lsoa11cd')
 
+fd3 <- left_join(fd2,imdbanes,by='lsoa11cd')
+
+tmp <- left_join(fd3,alldat,by='lsoa11cd')%>% select("organisation_name","NPatients","Visits")
+
+tmp
+```
+
+```{r}
+#register_google(key = "AIzaSyAdW2ECn17rgS5AoLMwxA5BE7kAEfG4FrI",write = TRUE)
+
+mad_map <- get_map(getbb("Bath and North East Somerset"), format_out = "sf_polygon")
+
+xx = left_join(fd2,lsoacoord,by=c('lsoa11cd'='LSOA11CD'))
+
+xxx = st_as_sf(xx, coords = c("LONG_","LAT"))
+
+```
+
+
+
+
+
+
+```{r maps, echo=FALSE}
+
+
+
+ggplot() + geom_sf(data = xxx, fill = "grey", color = "#F6F6F6") + geom_sf(data = lsoa_sf1, shape = 1) +
+theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_blank()) +
+        ggtitle("LSOA with hub usage")
+        
+        
+
+ggplot() + geom_sf(data = xxx, fill = "grey", color = "#F6F6F6") + geom_sf(data = lsoa_sf, shape = 1) + coord_sf(crs = "+proj=merc") + theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_blank()) + ggtitle("LSOA with hub usage")
+
+```
+
+
+
+```{r}
+p1 <- ggplot(data = xxx) +
+geom_sf(aes(fill = NPatients), color = "#676966", show.legend =  TRUE, lwd=.01) + 
+theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_blank()) +
+        ggtitle("Number of users by LSOA") +
+        theme(plot.title = element_text(hjust = 0.5)) +
+        scale_fill_distiller(direction = 1)
+p1
 
 ```
 
 ```{r}
-p1 <- ggplot(data = fd2) + geom_sf(aes(fill = NPatients), color = "#676966", show.legend =  TRUE, lwd=.01) +  theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks = element_blank(),
-        rect = element_blank()) + ggtitle("Number of users by LSOA")+ theme(plot.title = element_text(hjust = 0.5))+ scale_fill_distiller(direction = 1)
-
-p2 <- ggplot(data = fd2) + geom_sf(aes(fill = Visits), color = "#676966", show.legend =  TRUE, lwd=.01) +  theme(axis.text.x = element_blank(),
+p2 <- ggplot(data = xxx) + geom_sf(aes(fill = Visits), color = "#676966", show.legend =  TRUE, lwd=.01) +  theme(axis.text.x = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks = element_blank(),
         rect = element_blank()) + ggtitle("Number of visits by LSOA")+ theme(plot.title = element_text(hjust = 0.5))+ scale_fill_distiller(direction = 1)
+p2
 
 colpal <- rev(c('#f7fbff',
 '#deebf7','#c6dbef','#9ecae1','#6baed6','#4292c6','#2171b5','#08519c','#08306b','#010f2e'))
@@ -262,74 +349,80 @@ p4
 
 ```{r}
 towns <- data.frame(City = c('Bath', 'Keynsham', 'Midsomer Norton', 'Radstock'), lat = c(51.38, 51.4135,51.2842, 51.293), lon = -c(2.36, 2.4968, 2.4817, 2.448))
+
+```
+
+```{r}
+g1 <- ggmap(mad_map) + 
+  geom_sf(data = xxx, aes(fill=as.factor(IMD)),alpha = 0.5, inherit.aes = FALSE, color = "#676966", lwd=.1) +
+  geom_point(data = towns, aes(x=lon, y=lat),size = 1.5,alpha = .5, colour = "black", inherit.aes = FALSE) +
+  geom_label_repel(aes(x=lon, y=lat, label=City),
+data=towns, box.padding   = 0.25, alpha=.65, point.padding = 0,
+size =  3.5, segment.color = 'black',
+nudge_x = c(.77,0,-0.06,.055), nudge_y =c(-.028,1,0,-.009)) +
+scale_fill_manual(values=colpal, name = "IMD decile",labels = c("1 (most deprived)", paste(2:9),"10 (least deprived)"))
+
+g1
+
 ```
 
 
 ```{r}
-#register_google(key = "AIzaSyAdW2ECn17rgS5AoLMwxA5BE7kAEfG4FrI",write = TRUE)
 
-mad_map <- get_map(getbb("Bath and North East Somerset"), format_out = "sf_polygon")
-
-#plot(st_transform(fd2, crs = 3857)[4], bgMap = mad_map, col = rgb(1, 0, 0, 0.15), lwd = .1, main = '')
-
-
-g1 <- ggmap(mad_map) + 
-  geom_sf(data = fd2, aes(fill=as.factor(fd2$IMD)),alpha = 0.5, inherit.aes = FALSE, color = "#676966", lwd=.1)
-
-+
-  geom_point(data = towns, aes(x=lon, y=lat),size = 1.5,alpha = .5, colour = "black", inherit.aes = FALSE)
-
-+
-      geom_label_repel(aes(x=lon, y=lat, label=City), data=towns, box.padding   = 0.25, alpha=.65,
-                  point.padding = 0, size =  3.5,
-                  segment.color = 'black', nudge_x = c(.77,0,-0.06,.055), nudge_y = c(-.028,1,0,-.009))
-
-+
-   scale_fill_manual(values=colpal, name = "IMD decile",labels = c("1 (most deprived)", paste(2:9),"10 (least deprived)"))+ coord_sf(crs = st_crs(4326))+  theme(axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank(),rect = element_blank())
-
-+ xlab(NULL) + ylab(NULL)
-
-
-g2 <- ggmap(mad_map) + geom_sf(data = fd2, aes(fill=fd2$NPatients), inherit.aes = FALSE, color = "#676966", lwd=.1) +  scale_fill_gradientn(colors = alpha(c(brewer.pal(9, "Blues")), alpha=.5), name = "Number of users") + coord_sf(crs = st_crs(4326)) +
+g2 <- ggmap(mad_map) +
+geom_sf(data = xxx, aes(fill=NPatients), inherit.aes = FALSE, color = "#676966", lwd=.1) +  scale_fill_gradientn(colors = alpha(c(brewer.pal(9, "Blues")), alpha=.5), name = "Number of users") +
   geom_point(data = towns, aes(x=lon, y=lat),size = 1.5,alpha = .5, colour = "black", inherit.aes = FALSE) +
-      geom_label_repel(aes(x=lon, y=lat, label=City), data=towns, box.padding   = 0.25, alpha=.65,
-                  point.padding = 0, size =  3.5,
-                  segment.color = 'black', nudge_x = c(.77,0,-0.06,.055), nudge_y = c(-.028,1,0,-.009))+  theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks = element_blank(),
-        rect = element_blank()) + xlab(NULL) + ylab(NULL)
-
-g3 <- ggmap(mad_map) + geom_sf(data = fd2, aes(fill=fd2$Visits), inherit.aes = FALSE, color = "#676966", lwd=.1) +  scale_fill_gradientn(colors = alpha(c(brewer.pal(9, "Blues")), alpha=.5), name = "Number of visits")+ coord_sf(crs = st_crs(4326))+
-  geom_point(data = towns, aes(x=lon, y=lat),size = 1.5,alpha = .5, colour = "black", inherit.aes = FALSE)+
-      geom_label_repel(aes(x=lon, y=lat, label=City), data=towns, box.padding   = 0.25, alpha=.65,
-                  point.padding = 0, size =  3.5,
-                  segment.color = 'black', nudge_x = c(.77,0,-0.06,.055), nudge_y = c(-.028,1,0,-.009)) +  theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks = element_blank(),
-        rect = element_blank())+ xlab(NULL) + ylab(NULL)
-
-g4 <- ggmap(mad_map) + geom_sf(data = fd3, aes(fill=fd3$imdr), inherit.aes = FALSE, color = "#676966", lwd=.1) +  scale_fill_gradientn(colors = alpha(c(brewer.pal(9, "Blues")), alpha=.5), name = "IMD rank",trans = "reverse",
-                        breaks = c(min(fd3$imdr), 13000, 23000, max(fd3$imdr)), labels=c('3120 (most deprived)', "13000", "23000","32768 (least deprived)"))+ 
-  geom_point(data = towns, aes(x=lon, y=lat),size = 1.5,alpha = .5, colour = "black", inherit.aes = FALSE) + geom_label_repel(aes(x=lon, y=lat, label=City), data=towns, box.padding   = 0.25, alpha=.65,
-                  point.padding = 0, size =  3.5,
+      geom_label_repel(aes(x=lon, y=lat, label=City), data=towns, box.padding   = 0.25, alpha=.65,point.padding = 0, size =  3.5,
                   segment.color = 'black', nudge_x = c(.77,0,-0.06,.055), nudge_y = c(-.028,1,0,-.009)) +
-  coord_sf(crs = st_crs(4326))+  theme(axis.text.x = element_blank(),
+                  theme(axis.text.x = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks = element_blank(),
-        rect = element_blank())+ xlab(NULL) + ylab(NULL)
+        rect = element_blank()) +
+        xlab(NULL) +
+        ylab(NULL)
+        
+g2  
+
 ```
 
 
+```{r}
+
+g3 <- ggmap(mad_map) +
+geom_sf(data = xxx, aes(fill=Visits), inherit.aes = FALSE, color = "#676966", lwd=.1) +  scale_fill_gradientn(colors = alpha(c(brewer.pal(9, "Blues")), alpha=.5), name = "Number of visits") +
+geom_point(data = towns, aes(x=lon, y=lat),size = 1.5,alpha = .5, colour = "black", inherit.aes = FALSE) +
+geom_label_repel(aes(x=lon, y=lat, label=City),
+data=towns, box.padding   = 0.25, alpha=.65,point.padding = 0,
+size =  3.5,segment.color = 'black',
+nudge_x = c(.77,0,-0.06,.055), nudge_y = c(-.028,1,0,-.009)) +
+theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_blank()) +
+        xlab(NULL) +
+        ylab(NULL)
+
+g3
+
+```
+
+```{r}
+g4 <- ggmap(mad_map) +
+geom_sf(data = xxx, aes(fill=IMD), inherit.aes = FALSE, color = "#676966", lwd=.1) +  scale_fill_gradientn(colors = alpha(c(brewer.pal(9, "Blues")), alpha=.5), name = "IMD rank",trans = "reverse",
+                        breaks = c(min(xxx$IMD), 13000, 23000, max(xxx$IMD)), labels=c('3120 (most deprived)', "13000", "23000","32768 (least deprived)"))+ 
+  geom_point(data = towns, aes(x=lon, y=lat),size = 1.5,alpha = .5, colour = "black", inherit.aes = FALSE) + geom_label_repel(aes(x=lon, y=lat, label=City), data=towns, box.padding   = 0.25, alpha=.65,
+                  point.padding = 0, size =  3.5,
+                  segment.color = 'black', nudge_x = c(.77,0,-0.06,.055), nudge_y = c(-.028,1,0,-.009))+
+                  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_blank()) +
+        xlab(NULL) +
+        ylab(NULL)
+g4
 
 
+```
 
-1) table for each lsoa
-  imd Y
-  average age Y
-  number of patients
-  number of visits
-  most usaed pod
-  
-2) plot for each pod
-  bar graph by age v pod, not organisation
+
   
